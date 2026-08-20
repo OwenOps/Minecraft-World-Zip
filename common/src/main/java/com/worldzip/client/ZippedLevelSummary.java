@@ -6,6 +6,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.storage.LevelSummary;
 import net.minecraft.world.level.storage.LevelVersion;
+import com.worldzip.archive.ByteFormat;
 
 /**
  * A {@code .zip} in {@code saves/} that passed {@code WorldArchive.peek}. Play unzips it first.
@@ -13,6 +14,7 @@ import net.minecraft.world.level.storage.LevelVersion;
 public final class ZippedLevelSummary extends LevelSummary {
 
     private final Path zipPath;
+    private final long zipBytes;
 
     public ZippedLevelSummary(
         Path zipPath,
@@ -21,20 +23,27 @@ public final class ZippedLevelSummary extends LevelSummary {
         boolean requiresManualConversion,
         boolean requiresFileFixing,
         boolean experimental,
-        Path icon
+        Path icon,
+        long zipBytes
     ) {
         super(settings, levelVersion, zipPath.getFileName().toString(), requiresManualConversion, requiresFileFixing, false, experimental, icon);
         this.zipPath = zipPath;
+        this.zipBytes = zipBytes;
     }
 
     public Path zipPath() {
         return this.zipPath;
     }
 
+    public long zipBytes() {
+        return this.zipBytes;
+    }
+
     @Override
     public Component getInfo() {
         return Component.empty()
             .append(Component.translatable("worldzip.list.zipped").withStyle(ChatFormatting.YELLOW))
+            .append(Component.literal(" · " + ByteFormat.human(this.zipBytes)))
             .append(Component.literal(" — "))
             .append(super.getInfo());
     }

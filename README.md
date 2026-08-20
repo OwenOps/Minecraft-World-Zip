@@ -15,10 +15,11 @@ Use the JAR that matches your loader. Do not install both. Client and server bot
 On the Select World screen:
 
 1. Select a world folder and click **Zip** (between Delete and Recreate), then confirm. The folder is replaced with `name.zip`.
-2. Or click **Zip All** (next to the search box) to zip every eligible world in one go, after a single confirmation. Already-zipped, open, or invalid worlds are skipped.
-3. Zipped worlds show up in the list (marked **Zipped**). **Play** unzips them in place, then vanilla loads the folder.
-4. Only archives that contain a real `level.dat` (and pass path / size checks) are treated as worlds. Edit and Recreate stay off until the world is a folder again.
-5. Zipping/unzipping shows a progress screen with a **Cancel** button; cancelling leaves the original world untouched.
+2. Select a zipped world and click **Unzip** (same button) to extract without playing, or **Play** to unzip and load.
+3. **Zip All** / **Unzip All** (next to the search box) act on every eligible world in `saves/`, after one confirmation. Open worlds and name collisions are skipped.
+4. Zipped worlds show up in the list (marked **Zipped**, with size and icon). Edit and Recreate stay off until the world is a folder again.
+5. Only archives that contain a real `level.dat` (and pass path / size checks) are treated as worlds.
+6. Zipping/unzipping shows a progress bar with **Cancel**; cancelling leaves the original untouched.
 
 ## Build
 

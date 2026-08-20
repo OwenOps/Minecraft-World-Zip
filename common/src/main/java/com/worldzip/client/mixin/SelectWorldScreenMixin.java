@@ -40,6 +40,9 @@ public abstract class SelectWorldScreenMixin {
     @Unique
     private @Nullable Button worldzip$zipAllButton;
 
+    @Unique
+    private @Nullable Button worldzip$unzipAllButton;
+
     /**
      * "Zip All" sits next to the search box in the header: it acts on every world in {@code saves/},
      * not the selected one, so it does not belong in the per-selection footer row.
@@ -59,6 +62,15 @@ public abstract class SelectWorldScreenMixin {
             Button.builder(Component.translatable("worldzip.button.zipAll"), button -> {
                 if (this.list != null) {
                     WorldZipSelectWorld.zipAll(screen, this.list);
+                }
+            })
+                .width(72)
+                .build()
+        );
+        this.worldzip$unzipAllButton = subHeader.addChild(
+            Button.builder(Component.translatable("worldzip.button.unzipAll"), button -> {
+                if (this.list != null) {
+                    WorldZipSelectWorld.unzipAll(screen, this.list);
                 }
             })
                 .width(80)
@@ -120,7 +132,7 @@ public abstract class SelectWorldScreenMixin {
         this.worldzip$zipButton = helper.addChild(
             Button.builder(Component.translatable("worldzip.button.zip"), button -> {
                 if (this.list != null) {
-                    WorldZipSelectWorld.zipSelected(screen, this.list);
+                    WorldZipSelectWorld.onArchiveButton(screen, this.list);
                 }
             })
                 .width(71)
@@ -132,9 +144,21 @@ public abstract class SelectWorldScreenMixin {
     @Inject(method = "updateButtonStatus", at = @At("TAIL"))
     private void worldzip$updateZipButton(@Nullable LevelSummary summary, CallbackInfo ci) {
         if (this.worldzip$zipButton != null) {
-            this.worldzip$zipButton.active = WorldZipSelectWorld.canZip(summary);
-            Component reason = summary == null ? null : WorldZipSelectWorld.zipBlockedReason(summary);
-            this.worldzip$zipButton.setTooltip(reason == null ? null : Tooltip.create(reason));
+            if (summary instanceof ZippedLevelSummary zipped) {
+                this.worldzip$zipButton.setMessage(Component.translatable("worldzip.button.unzip"));
+                this.worldzip$zipButton.active = WorldZipSelectWorld.canUnzip(zipped);
+                Component reason = WorldZipSelectWorld.unzipBlockedReason(zipped);
+                this.worldzip$zipButton.setTooltip(
+                    reason == null
+                        ? Tooltip.create(Component.translatable("worldzip.button.unzip.tooltip"))
+                        : Tooltip.create(reason)
+                );
+            } else {
+                this.worldzip$zipButton.setMessage(Component.translatable("worldzip.button.zip"));
+                this.worldzip$zipButton.active = WorldZipSelectWorld.canZip(summary);
+                Component reason = summary == null ? null : WorldZipSelectWorld.zipBlockedReason(summary);
+                this.worldzip$zipButton.setTooltip(reason == null ? null : Tooltip.create(reason));
+            }
         }
         if (summary instanceof ZippedLevelSummary) {
             Tooltip zippedTooltip = Tooltip.create(Component.translatable("worldzip.tooltip.zippedDisabled"));

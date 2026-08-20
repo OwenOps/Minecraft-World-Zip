@@ -44,6 +44,7 @@ public final class ZippedWorldList {
         if (savesDir == null || !Files.isDirectory(savesDir)) {
             return zips;
         }
+        pruneIconCache(savesDir);
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(savesDir)) {
             for (Path path : stream) {
                 if (WorldArchive.isOrphanTemp(path)) {
@@ -55,7 +56,7 @@ public final class ZippedWorldList {
                     continue;
                 }
                 try {
-                    zips.add(readSummary(path));
+                    zips.add(readSummary(savesDir, path));
                 } catch (Exception e) {
                     WorldZip.LOGGER.debug("Skipping {}: {}", path.getFileName(), e.toString());
                 }
@@ -74,11 +75,12 @@ public final class ZippedWorldList {
         return List.copyOf(merged);
     }
 
-    private static LevelSummary readSummary(Path zip) throws WorldArchiveException, IOException {
+    private static LevelSummary readSummary(Path savesDir, Path zip) throws WorldArchiveException, IOException {
         WorldArchive.WorldPeekResult peekResult = WorldArchive.peekWithLevelDat(zip);
         WorldArchive.WorldPeek peek = peekResult.peek();
         byte[] levelDat = peekResult.levelDat();
-        Path missingIcon = zip.resolveSibling(peek.folderName()).resolve("icon.png");
+        Path icon = cacheIcon(savesDir, zip, peekResult.iconPng(), peek.folderName());
+        long zipBytes = Files.size(zip);
         try {
             CompoundTag root = NbtIo.readCompressed(new ByteArrayInputStream(levelDat), NbtAccounter.uncompressedQuota());
             CompoundTag tag = root.getCompoundOrEmpty("Data");
@@ -101,15 +103,16 @@ public final class ZippedWorldList {
                 requiresManualConversion,
                 requiresFileFixing,
                 experimental,
-                missingIcon
+                icon,
+                zipBytes
             );
         } catch (Exception e) {
             WorldZip.LOGGER.debug("Could not parse level.dat in {}, using folder name", zip.getFileName(), e);
-            return fallbackSummary(zip, peek.folderName(), missingIcon);
+            return fallbackSummary(zip, peek.folderName(), icon, zipBytes);
         }
     }
 
-    private static ZippedLevelSummary fallbackSummary(Path zip, String folderName, Path icon) {
+    private static ZippedLevelSummary fallbackSummary(Path zip, String folderName, Path icon, long zipBytes) {
         Dynamic<?> empty = new Dynamic<>(NbtOps.INSTANCE, new CompoundTag());
         LevelSettings settings = new LevelSettings(
             folderName,
@@ -118,7 +121,50 @@ public final class ZippedWorldList {
             false,
             WorldDataConfiguration.DEFAULT
         );
-        return new ZippedLevelSummary(zip, settings, LevelVersion.parse(empty), false, false, false, icon);
+        return new ZippedLevelSummary(zip, settings, LevelVersion.parse(empty), false, false, false, icon, zipBytes);
+    }
+
+    private static Path cacheIcon(Path savesDir, Path zip, byte[] iconPng, String folderName) {
+        Path missing = zip.resolveSibling(folderName).resolve(WorldArchive.ICON_PNG);
+        if (iconPng == null || iconPng.length == 0) {
+            return missing;
+        }
+        try {
+            Path cacheDir = savesDir.resolve(WorldArchive.ICON_CACHE_DIR);
+            Files.createDirectories(cacheDir);
+            Path cached = cacheDir.resolve(zip.getFileName().toString() + ".png");
+            if (Files.isRegularFile(cached)
+                && Files.getLastModifiedTime(cached).toMillis() >= Files.getLastModifiedTime(zip).toMillis()
+                && Files.size(cached) == iconPng.length) {
+                return cached;
+            }
+            Files.write(cached, iconPng);
+            return cached;
+        } catch (IOException e) {
+            WorldZip.LOGGER.debug("Could not cache icon for {}", zip.getFileName(), e);
+            return missing;
+        }
+    }
+
+    private static void pruneIconCache(Path savesDir) {
+        Path cacheDir = savesDir.resolve(WorldArchive.ICON_CACHE_DIR);
+        if (!Files.isDirectory(cacheDir)) {
+            return;
+        }
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(cacheDir)) {
+            for (Path cached : stream) {
+                String name = cached.getFileName().toString();
+                if (!name.endsWith(".png")) {
+                    continue;
+                }
+                Path zip = savesDir.resolve(name.substring(0, name.length() - ".png".length()));
+                if (!Files.exists(zip)) {
+                    Files.deleteIfExists(cached);
+                }
+            }
+        } catch (IOException e) {
+            WorldZip.LOGGER.debug("Could not prune icon cache in {}", cacheDir, e);
+        }
     }
 
     private static boolean isExperimental(Dynamic<?> dataTag) {

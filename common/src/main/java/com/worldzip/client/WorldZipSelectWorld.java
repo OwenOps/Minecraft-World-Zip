@@ -1,8 +1,11 @@
 package com.worldzip.client;
 
 import com.worldzip.WorldZip;
+import com.worldzip.archive.ByteFormat;
 import com.worldzip.archive.WorldArchive;
 import com.worldzip.archive.WorldArchiveException;
+import java.io.IOException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -29,6 +32,10 @@ public final class WorldZipSelectWorld {
         return summary != null && zipBlockedReason(summary) == null;
     }
 
+    public static boolean canUnzip(@Nullable LevelSummary summary) {
+        return summary instanceof ZippedLevelSummary zipped && unzipBlockedReason(zipped) == null;
+    }
+
     /**
      * @return why {@code summary} cannot be zipped right now, or {@code null} if it can be. Used both
      *     to gate the Zip button and to explain the block to the player via a tooltip.
@@ -45,7 +52,7 @@ public final class WorldZipSelectWorld {
         }
         Minecraft minecraft = Minecraft.getInstance();
         Path worldDir = minecraft.getLevelSource().getLevelPath(summary.getLevelId());
-        if (!Files.isDirectory(worldDir) || !Files.isRegularFile(worldDir.resolve(WorldArchive.LEVEL_DAT))) {
+        if (!WorldArchive.isWorldFolder(worldDir)) {
             return Component.translatable("worldzip.button.zip.tooltip.invalid");
         }
         Path zip = worldDir.resolveSibling(worldDir.getFileName().toString() + WorldArchive.ZIP_EXTENSION);
@@ -55,8 +62,23 @@ public final class WorldZipSelectWorld {
         return null;
     }
 
-    public static void zipSelected(Screen selectWorldScreen, WorldSelectionList list) {
-        list.getSelectedOpt().ifPresent(entry -> zipWorld(selectWorldScreen, list, entry.getLevelSummary()));
+    public static @Nullable Component unzipBlockedReason(ZippedLevelSummary summary) {
+        Path dest = WorldArchive.unzipDestination(summary.zipPath());
+        if (Files.exists(dest)) {
+            return Component.translatable("worldzip.button.unzip.tooltip.exists");
+        }
+        return null;
+    }
+
+    public static void onArchiveButton(Screen selectWorldScreen, WorldSelectionList list) {
+        list.getSelectedOpt().ifPresent(entry -> {
+            LevelSummary summary = entry.getLevelSummary();
+            if (summary instanceof ZippedLevelSummary zipped) {
+                unzipWorld(selectWorldScreen, list, zipped);
+            } else {
+                zipWorld(selectWorldScreen, list, summary);
+            }
+        });
     }
 
     public static void zipWorld(Screen selectWorldScreen, WorldSelectionList list, LevelSummary summary) {
@@ -64,32 +86,39 @@ public final class WorldZipSelectWorld {
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();
+        Path worldDir = minecraft.getLevelSource().getLevelPath(summary.getLevelId());
+        long size = folderSizeQuiet(worldDir);
+        Component message = size >= WorldArchive.LARGE_WORLD_BYTES
+            ? Component.translatable("worldzip.zip.confirm.message.large", summary.getLevelName(), ByteFormat.human(size))
+            : Component.translatable("worldzip.zip.confirm.message", summary.getLevelName(), ByteFormat.human(size));
         minecraft.setScreenAndShow(
             new ConfirmScreen(
                 confirmed -> {
                     if (confirmed) {
-                        doZipWorld(selectWorldScreen, list, summary);
+                        doZipWorld(selectWorldScreen, list, summary, worldDir);
                     } else {
                         minecraft.setScreenAndShow(selectWorldScreen);
                     }
                 },
                 Component.translatable("worldzip.zip.confirm.title"),
-                Component.translatable("worldzip.zip.confirm.message", summary.getLevelName()),
+                message,
                 Component.translatable("worldzip.zip.confirm.yes"),
                 CommonComponents.GUI_CANCEL
             )
         );
     }
 
-    private static void doZipWorld(Screen selectWorldScreen, WorldSelectionList list, LevelSummary summary) {
+    private static void doZipWorld(Screen selectWorldScreen, WorldSelectionList list, LevelSummary summary, Path worldDir) {
         Minecraft minecraft = Minecraft.getInstance();
-        Path worldDir = minecraft.getLevelSource().getLevelPath(summary.getLevelId());
         WorldZipProgressScreen progress = new WorldZipProgressScreen(Component.translatable("worldzip.zipping"));
         minecraft.setScreenAndShow(progress);
         Util.backgroundExecutor().execute(() -> {
             try {
-                WorldArchive.zipReplace(worldDir, progress::isCancelled);
-                minecraft.execute(list::returnToScreen);
+                WorldArchive.ZipResult result = WorldArchive.zipReplace(worldDir, progress::isCancelled, progress.progress());
+                minecraft.execute(() -> {
+                    list.returnToScreen();
+                    showZipSaved(minecraft, result);
+                });
             } catch (WorldArchiveException e) {
                 if (e.isCancelled()) {
                     minecraft.execute(list::returnToScreen);
@@ -110,15 +139,47 @@ public final class WorldZipSelectWorld {
         });
     }
 
+    public static void unzipWorld(Screen selectWorldScreen, WorldSelectionList list, ZippedLevelSummary summary) {
+        if (!canUnzip(summary)) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        minecraft.setScreenAndShow(
+            new ConfirmScreen(
+                confirmed -> {
+                    if (confirmed) {
+                        doUnzipWorld(selectWorldScreen, list, summary, false);
+                    } else {
+                        minecraft.setScreenAndShow(selectWorldScreen);
+                    }
+                },
+                Component.translatable("worldzip.unzip.confirm.title"),
+                Component.translatable("worldzip.unzip.confirm.message", summary.getLevelName(), ByteFormat.human(summary.zipBytes())),
+                Component.translatable("worldzip.unzip.confirm.yes"),
+                CommonComponents.GUI_CANCEL
+            )
+        );
+    }
+
     public static void playZipped(WorldSelectionList list, ZippedLevelSummary summary) {
+        doUnzipWorld(null, list, summary, true);
+    }
+
+    private static void doUnzipWorld(@Nullable Screen selectWorldScreen, WorldSelectionList list, ZippedLevelSummary summary, boolean thenPlay) {
         Minecraft minecraft = Minecraft.getInstance();
         WorldZipProgressScreen progress = new WorldZipProgressScreen(Component.translatable("worldzip.unzipping"));
         minecraft.setScreenAndShow(progress);
         Util.backgroundExecutor().execute(() -> {
             try {
-                Path dest = WorldArchive.unzipReplace(summary.zipPath(), progress::isCancelled);
+                Path dest = WorldArchive.unzipReplace(summary.zipPath(), progress::isCancelled, progress.progress());
                 String levelId = dest.getFileName().toString();
-                minecraft.execute(() -> minecraft.createWorldOpenFlows().openWorld(levelId, list::returnToScreen));
+                minecraft.execute(() -> {
+                    if (thenPlay) {
+                        minecraft.createWorldOpenFlows().openWorld(levelId, list::returnToScreen);
+                    } else {
+                        list.returnToScreen();
+                    }
+                });
             } catch (WorldArchiveException e) {
                 if (e.isCancelled()) {
                     minecraft.execute(list::returnToScreen);
@@ -126,7 +187,11 @@ public final class WorldZipSelectWorld {
                     WorldZip.LOGGER.error("Could not unzip world {}", summary.zipPath().getFileName(), e);
                     minecraft.execute(() -> {
                         showFailure(minecraft, "worldzip.unzip.failed", e);
-                        list.returnToScreen();
+                        if (selectWorldScreen != null) {
+                            minecraft.gui.setScreen(selectWorldScreen);
+                        } else {
+                            list.returnToScreen();
+                        }
                     });
                 }
             } catch (Exception e) {
@@ -149,24 +214,9 @@ public final class WorldZipSelectWorld {
         }
     }
 
-    /**
-     * @return every world currently in {@code list} that {@link #canZip} allows zipping. Zipped,
-     *     locked, and otherwise invalid entries are left out rather than reported as failures.
-     */
-    public static List<LevelSummary> zippableWorlds(WorldSelectionList list) {
-        List<LevelSummary> result = new ArrayList<>();
-        for (WorldSelectionList.Entry entry : list.children()) {
-            LevelSummary summary = entry.getLevelSummary();
-            if (canZip(summary)) {
-                result.add(summary);
-            }
-        }
-        return result;
-    }
-
     public static void zipAll(Screen selectWorldScreen, WorldSelectionList list) {
-        List<LevelSummary> targets = zippableWorlds(list);
         Minecraft minecraft = Minecraft.getInstance();
+        List<Path> targets = zippableWorldDirs(minecraft.getLevelSource().getBaseDir());
         if (targets.isEmpty()) {
             SystemToast.add(
                 minecraft.gui.toastManager(),
@@ -193,55 +243,210 @@ public final class WorldZipSelectWorld {
         );
     }
 
-    private static void doZipAll(WorldSelectionList list, List<LevelSummary> targets) {
+    public static void unzipAll(Screen selectWorldScreen, WorldSelectionList list) {
         Minecraft minecraft = Minecraft.getInstance();
-        WorldZipProgressScreen progress = new WorldZipProgressScreen(zipAllProgressMessage(1, targets.size(), targets.get(0)));
+        List<Path> targets = unzippableZips(minecraft.getLevelSource().getBaseDir());
+        if (targets.isEmpty()) {
+            SystemToast.add(
+                minecraft.gui.toastManager(),
+                SystemToast.SystemToastId.WORLD_BACKUP,
+                Component.translatable("worldzip.unzipall.none.title"),
+                Component.translatable("worldzip.unzipall.none.detail")
+            );
+            return;
+        }
+        minecraft.setScreenAndShow(
+            new ConfirmScreen(
+                confirmed -> {
+                    if (confirmed) {
+                        doUnzipAll(list, targets);
+                    } else {
+                        minecraft.setScreenAndShow(selectWorldScreen);
+                    }
+                },
+                Component.translatable("worldzip.unzipall.confirm.title"),
+                Component.translatable("worldzip.unzipall.confirm.message", targets.size()),
+                Component.translatable("worldzip.unzipall.confirm.yes"),
+                CommonComponents.GUI_CANCEL
+            )
+        );
+    }
+
+    private static void doZipAll(WorldSelectionList list, List<Path> targets) {
+        Minecraft minecraft = Minecraft.getInstance();
+        WorldZipProgressScreen progress = new WorldZipProgressScreen(batchProgress("worldzip.zipall.progress", 1, targets.size(), targets.get(0)));
         minecraft.setScreenAndShow(progress);
         Util.backgroundExecutor().execute(() -> {
             int zipped = 0;
-            int skipped = 0;
+            int failed = 0;
+            String firstFailed = null;
+            long saved = 0;
             for (int i = 0; i < targets.size(); i++) {
                 if (progress.isCancelled()) {
-                    skipped += targets.size() - i;
                     break;
                 }
-                LevelSummary summary = targets.get(i);
+                Path worldDir = targets.get(i);
                 int oneBasedIndex = i + 1;
-                minecraft.execute(() -> progress.setMessage(zipAllProgressMessage(oneBasedIndex, targets.size(), summary)));
-                Path worldDir = minecraft.getLevelSource().getLevelPath(summary.getLevelId());
+                minecraft.execute(() -> progress.setMessage(batchProgress("worldzip.zipall.progress", oneBasedIndex, targets.size(), worldDir)));
                 try {
-                    WorldArchive.zipReplace(worldDir, progress::isCancelled);
+                    WorldArchive.ZipResult result = WorldArchive.zipReplace(worldDir, progress::isCancelled, progress.progress());
                     zipped++;
+                    saved += result.savedBytes();
                 } catch (WorldArchiveException e) {
                     if (e.isCancelled()) {
-                        skipped += targets.size() - i;
                         break;
                     }
-                    WorldZip.LOGGER.warn("Zip All: skipping {}: {}", summary.getLevelId(), e.toString());
-                    skipped++;
+                    WorldZip.LOGGER.warn("Zip All: failed {}: {}", worldDir.getFileName(), e.toString());
+                    failed++;
+                    if (firstFailed == null) {
+                        firstFailed = worldDir.getFileName().toString();
+                    }
                 } catch (Exception e) {
-                    WorldZip.LOGGER.warn("Zip All: skipping {}: {}", summary.getLevelId(), e.toString());
-                    skipped++;
+                    WorldZip.LOGGER.warn("Zip All: failed {}: {}", worldDir.getFileName(), e.toString());
+                    failed++;
+                    if (firstFailed == null) {
+                        firstFailed = worldDir.getFileName().toString();
+                    }
                 }
             }
             int finalZipped = zipped;
-            int finalSkipped = skipped;
+            int finalFailed = failed;
+            String finalFirstFailed = firstFailed;
+            long finalSaved = saved;
             minecraft.execute(() -> {
                 list.returnToScreen();
-                showZipAllSummary(minecraft, finalZipped, finalSkipped);
+                showBatchSummary(minecraft, "worldzip.zipall.done.title", finalZipped, finalFailed, finalFirstFailed, finalSaved);
             });
         });
     }
 
-    private static Component zipAllProgressMessage(int oneBasedIndex, int total, LevelSummary summary) {
-        return Component.translatable("worldzip.zipall.progress", oneBasedIndex, total, summary.getLevelName());
+    private static void doUnzipAll(WorldSelectionList list, List<Path> targets) {
+        Minecraft minecraft = Minecraft.getInstance();
+        WorldZipProgressScreen progress = new WorldZipProgressScreen(batchProgress("worldzip.unzipall.progress", 1, targets.size(), targets.get(0)));
+        minecraft.setScreenAndShow(progress);
+        Util.backgroundExecutor().execute(() -> {
+            int unzipped = 0;
+            int failed = 0;
+            String firstFailed = null;
+            for (int i = 0; i < targets.size(); i++) {
+                if (progress.isCancelled()) {
+                    break;
+                }
+                Path zip = targets.get(i);
+                int oneBasedIndex = i + 1;
+                minecraft.execute(() -> progress.setMessage(batchProgress("worldzip.unzipall.progress", oneBasedIndex, targets.size(), zip)));
+                try {
+                    WorldArchive.unzipReplace(zip, progress::isCancelled, progress.progress());
+                    unzipped++;
+                } catch (WorldArchiveException e) {
+                    if (e.isCancelled()) {
+                        break;
+                    }
+                    WorldZip.LOGGER.warn("Unzip All: failed {}: {}", zip.getFileName(), e.toString());
+                    failed++;
+                    if (firstFailed == null) {
+                        firstFailed = zip.getFileName().toString();
+                    }
+                } catch (Exception e) {
+                    WorldZip.LOGGER.warn("Unzip All: failed {}: {}", zip.getFileName(), e.toString());
+                    failed++;
+                    if (firstFailed == null) {
+                        firstFailed = zip.getFileName().toString();
+                    }
+                }
+            }
+            int finalUnzipped = unzipped;
+            int finalFailed = failed;
+            String finalFirstFailed = firstFailed;
+            minecraft.execute(() -> {
+                list.returnToScreen();
+                showBatchSummary(minecraft, "worldzip.unzipall.done.title", finalUnzipped, finalFailed, finalFirstFailed, -1L);
+            });
+        });
     }
 
-    private static void showZipAllSummary(Minecraft minecraft, int zipped, int skipped) {
-        Component detail = skipped > 0
-            ? Component.translatable("worldzip.zipall.done.detailWithSkipped", zipped, skipped)
-            : Component.translatable("worldzip.zipall.done.detail", zipped);
-        SystemToast.add(minecraft.gui.toastManager(), SystemToast.SystemToastId.WORLD_BACKUP, Component.translatable("worldzip.zipall.done.title"), detail);
+    static List<Path> zippableWorldDirs(Path savesDir) {
+        List<Path> result = new ArrayList<>();
+        if (savesDir == null || !Files.isDirectory(savesDir)) {
+            return result;
+        }
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(savesDir)) {
+            for (Path path : stream) {
+                String name = path.getFileName().toString();
+                if (name.startsWith(".") || WorldArchive.isOrphanTemp(path) || !WorldArchive.isWorldFolder(path)) {
+                    continue;
+                }
+                Path zip = path.resolveSibling(name + WorldArchive.ZIP_EXTENSION);
+                if (Files.exists(zip) || WorldArchive.isSessionLockHeld(path)) {
+                    continue;
+                }
+                result.add(path);
+            }
+        } catch (IOException e) {
+            WorldZip.LOGGER.error("Could not list worlds to zip in {}", savesDir, e);
+        }
+        result.sort((a, b) -> a.getFileName().toString().compareToIgnoreCase(b.getFileName().toString()));
+        return result;
+    }
+
+    static List<Path> unzippableZips(Path savesDir) {
+        List<Path> result = new ArrayList<>();
+        if (savesDir == null || !Files.isDirectory(savesDir)) {
+            return result;
+        }
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(savesDir)) {
+            for (Path path : stream) {
+                if (!WorldArchive.isZipFile(path)) {
+                    continue;
+                }
+                try {
+                    WorldArchive.peek(path);
+                } catch (Exception e) {
+                    continue;
+                }
+                if (Files.exists(WorldArchive.unzipDestination(path))) {
+                    continue;
+                }
+                result.add(path);
+            }
+        } catch (IOException e) {
+            WorldZip.LOGGER.error("Could not list zips to unzip in {}", savesDir, e);
+        }
+        result.sort((a, b) -> a.getFileName().toString().compareToIgnoreCase(b.getFileName().toString()));
+        return result;
+    }
+
+    private static Component batchProgress(String key, int oneBasedIndex, int total, Path path) {
+        return Component.translatable(key, oneBasedIndex, total, WorldArchive.stripZipExtension(path.getFileName().toString()));
+    }
+
+    private static long folderSizeQuiet(Path worldDir) {
+        try {
+            return WorldArchive.sourceBytes(worldDir);
+        } catch (IOException e) {
+            return 0L;
+        }
+    }
+
+    private static void showZipSaved(Minecraft minecraft, WorldArchive.ZipResult result) {
+        Component detail = result.savedBytes() > 0
+            ? Component.translatable("worldzip.zip.done.saved", ByteFormat.human(result.savedBytes()), ByteFormat.human(result.zipBytes()))
+            : Component.translatable("worldzip.zip.done.detail", ByteFormat.human(result.zipBytes()));
+        SystemToast.add(minecraft.gui.toastManager(), SystemToast.SystemToastId.WORLD_BACKUP, Component.translatable("worldzip.zip.done.title"), detail);
+    }
+
+    private static void showBatchSummary(Minecraft minecraft, String titleKey, int ok, int failed, @Nullable String firstFailed, long savedBytes) {
+        Component detail;
+        if (failed > 0 && firstFailed != null) {
+            detail = failed == 1
+                ? Component.translatable("worldzip.batch.done.oneFailed", ok, firstFailed)
+                : Component.translatable("worldzip.batch.done.failed", ok, failed);
+        } else if (savedBytes > 0) {
+            detail = Component.translatable("worldzip.batch.done.saved", ok, ByteFormat.human(savedBytes));
+        } else {
+            detail = Component.translatable("worldzip.batch.done.ok", ok);
+        }
+        SystemToast.add(minecraft.gui.toastManager(), SystemToast.SystemToastId.WORLD_BACKUP, Component.translatable(titleKey), detail);
     }
 
     private static void showFailure(Minecraft minecraft, String titleKey, Exception e) {
