@@ -2,9 +2,12 @@ package com.worldzip.client.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.worldzip.client.WorldZipListFilter;
+import com.worldzip.client.WorldZipListRefilter;
 import com.worldzip.client.WorldZipSelectWorld;
 import com.worldzip.client.ZippedLevelSummary;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.layouts.GridLayout;
 import net.minecraft.client.gui.layouts.LayoutElement;
@@ -52,6 +55,18 @@ public abstract class SelectWorldScreenMixin {
     private LayoutElement worldzip$insertZipAllButton(LinearLayout subHeader, LayoutElement searchBox, Operation<LayoutElement> original) {
         LayoutElement result = original.call(subHeader, searchBox);
         SelectWorldScreen screen = (SelectWorldScreen) (Object) this;
+        subHeader.addChild(
+            CycleButton.builder(WorldZipListFilter::label, WorldZipListFilter.current())
+                .withValues(WorldZipListFilter.ALL, WorldZipListFilter.FOLDERS, WorldZipListFilter.ZIPPED)
+                .displayOnlyValue()
+                .withTooltip(value -> Tooltip.create(Component.translatable("worldzip.filter.tooltip")))
+                .create(0, 0, 80, 20, Component.translatable("worldzip.filter"), (button, value) -> {
+                    WorldZipListFilter.set(value);
+                    if (this.list instanceof WorldZipListRefilter refilter) {
+                        refilter.worldzip$reapplyFilter();
+                    }
+                })
+        );
         subHeader.addChild(
             Button.builder(Component.translatable("worldzip.button.zipAll"), button -> {
                 if (this.list != null) {
