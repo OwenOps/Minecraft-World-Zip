@@ -27,6 +27,9 @@ public abstract class WorldSelectionListMixin {
             WorldZip.LOGGER.error("Could not list zipped worlds", throwable);
             return List.of();
         });
-        cir.setReturnValue(cir.getReturnValue().thenCombine(zips, ZippedWorldList::merge));
+        cir.setReturnValue(cir.getReturnValue().thenCombine(zips, (folders, zipList) -> {
+            ZippedWorldList.attachFolderSizes(folders, savesDir);
+            return ZippedWorldList.merge(folders, zipList);
+        }));
     }
 }

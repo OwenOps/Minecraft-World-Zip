@@ -185,10 +185,6 @@ public final class WorldArchive {
         return zipReplace(worldDir, NEVER_CANCELLED, NO_PROGRESS);
     }
 
-    public static ZipResult zipReplace(Path worldDir, BooleanSupplier cancelled) throws WorldArchiveException {
-        return zipReplace(worldDir, cancelled, NO_PROGRESS);
-    }
-
     /**
      * Zip {@code worldDir} to {@code worldDir.getFileName() + ".zip"} in the same parent, then delete the folder.
      * Writes a temp zip first so a failed zip does not destroy the world.
@@ -242,10 +238,6 @@ public final class WorldArchive {
 
     public static Path unzipReplace(Path zip) throws WorldArchiveException {
         return unzipReplace(zip, NEVER_CANCELLED, NO_PROGRESS);
-    }
-
-    public static Path unzipReplace(Path zip, BooleanSupplier cancelled) throws WorldArchiveException {
-        return unzipReplace(zip, cancelled, NO_PROGRESS);
     }
 
     /**

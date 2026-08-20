@@ -67,6 +67,30 @@ public final class ZippedWorldList {
         return zips;
     }
 
+    /**
+     * Walk each folder world once (on the list-load thread) so {@link LevelSummary#getInfo()} can
+     * show disk size without hitting the filesystem while the list renders.
+     */
+    public static void attachFolderSizes(List<LevelSummary> folders, Path savesDir) {
+        if (savesDir == null || folders == null) {
+            return;
+        }
+        for (LevelSummary summary : folders) {
+            if (summary instanceof ZippedLevelSummary || !(summary instanceof WorldZipFolderSize holder)) {
+                continue;
+            }
+            Path dir = savesDir.resolve(summary.getLevelId());
+            if (!WorldArchive.isWorldFolder(dir)) {
+                continue;
+            }
+            try {
+                holder.worldzip$setFolderBytes(WorldArchive.sourceBytes(dir));
+            } catch (IOException e) {
+                WorldZip.LOGGER.debug("Could not measure {}: {}", dir.getFileName(), e.toString());
+            }
+        }
+    }
+
     public static List<LevelSummary> merge(List<LevelSummary> folders, List<LevelSummary> zips) {
         List<LevelSummary> merged = new ArrayList<>(folders.size() + zips.size());
         merged.addAll(folders);

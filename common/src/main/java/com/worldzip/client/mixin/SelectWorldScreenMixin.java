@@ -37,12 +37,6 @@ public abstract class SelectWorldScreenMixin {
     @Unique
     private @Nullable Button worldzip$zipButton;
 
-    @Unique
-    private @Nullable Button worldzip$zipAllButton;
-
-    @Unique
-    private @Nullable Button worldzip$unzipAllButton;
-
     /**
      * "Zip All" sits next to the search box in the header: it acts on every world in {@code saves/},
      * not the selected one, so it does not belong in the per-selection footer row.
@@ -58,7 +52,7 @@ public abstract class SelectWorldScreenMixin {
     private LayoutElement worldzip$insertZipAllButton(LinearLayout subHeader, LayoutElement searchBox, Operation<LayoutElement> original) {
         LayoutElement result = original.call(subHeader, searchBox);
         SelectWorldScreen screen = (SelectWorldScreen) (Object) this;
-        this.worldzip$zipAllButton = subHeader.addChild(
+        subHeader.addChild(
             Button.builder(Component.translatable("worldzip.button.zipAll"), button -> {
                 if (this.list != null) {
                     WorldZipSelectWorld.zipAll(screen, this.list);
@@ -67,7 +61,7 @@ public abstract class SelectWorldScreenMixin {
                 .width(72)
                 .build()
         );
-        this.worldzip$unzipAllButton = subHeader.addChild(
+        subHeader.addChild(
             Button.builder(Component.translatable("worldzip.button.unzipAll"), button -> {
                 if (this.list != null) {
                     WorldZipSelectWorld.unzipAll(screen, this.list);

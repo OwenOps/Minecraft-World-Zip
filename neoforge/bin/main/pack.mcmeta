@@ -1,0 +1,7 @@
+{
+  "pack": {
+    "description": "${mod_name}",
+    "min_format": 82,
+    "max_format": 999
+  }
+}

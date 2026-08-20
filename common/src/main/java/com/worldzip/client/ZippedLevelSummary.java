@@ -1,12 +1,12 @@
 package com.worldzip.client;
 
+import com.worldzip.archive.ByteFormat;
 import java.nio.file.Path;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.storage.LevelSummary;
 import net.minecraft.world.level.storage.LevelVersion;
-import com.worldzip.archive.ByteFormat;
 
 /**
  * A {@code .zip} in {@code saves/} that passed {@code WorldArchive.peek}. Play unzips it first.

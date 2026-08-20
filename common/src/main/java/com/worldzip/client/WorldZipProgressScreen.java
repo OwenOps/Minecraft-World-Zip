@@ -1,9 +1,8 @@
 package com.worldzip.client;
 
-import java.util.Locale;
-import java.util.concurrent.atomic.AtomicBoolean;
 import com.worldzip.archive.ArchiveProgress;
 import com.worldzip.archive.ByteFormat;
+import java.util.Locale;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.FocusableTextWidget;
@@ -26,7 +25,6 @@ public final class WorldZipProgressScreen extends Screen {
     private static final int BAR_OUTLINE = 0xFF000000;
 
     private final ArchiveProgress progress = new ArchiveProgress();
-    private final AtomicBoolean cancelled = new AtomicBoolean();
     private @Nullable FocusableTextWidget textWidget;
     private @Nullable StringWidget percentWidget;
     private @Nullable Button cancelButton;
@@ -45,7 +43,7 @@ public final class WorldZipProgressScreen extends Screen {
     protected void init() {
         this.textWidget = this.addRenderableWidget(FocusableTextWidget.builder(this.message, this.font, 12).textWidth(this.font.width(this.message)).build());
         this.percentWidget = this.addRenderableWidget(new StringWidget(this.percentText(), this.font).setMaxWidth(220));
-        this.cancelButton = this.addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL, button -> this.cancelled.set(true)).build());
+        this.cancelButton = this.addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL, button -> this.progress.cancel()).build());
         this.repositionElements();
     }
 
@@ -73,7 +71,7 @@ public final class WorldZipProgressScreen extends Screen {
 
     /** Safe to poll from a background thread. */
     public boolean isCancelled() {
-        return this.cancelled.get();
+        return this.progress.isCancelled();
     }
 
     @Override
