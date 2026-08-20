@@ -1,0 +1,69 @@
+plugins {
+    id 'multiloader-common'
+}
+
+evaluationDependsOn(':common')
+
+configurations {
+    commonJava {
+        canBeResolved = true
+    }
+    commonResources {
+        canBeResolved = true
+    }
+}
+
+dependencies {
+    compileOnly(project(':common')) {
+        def loaderAttribute = Attribute.of('io.github.mcgradleconventions.loader', String)
+        attributes {
+            attribute(loaderAttribute, 'common')
+        }
+    }
+    commonJava project(path: ':common', configuration: 'commonJava')
+    commonResources project(path: ':common', configuration: 'commonResources')
+}
+
+// JDT ignores source folders outside the project. Link common into this module.
+def commonJavaLink = file('src/common-java')
+def commonResourcesLink = file('src/common-resources')
+ensureDirectoryLink(commonJavaLink, project(':common').file('src/main/java'))
+ensureDirectoryLink(commonResourcesLink, project(':common').file('src/main/resources'))
+
+sourceSets.named('main') {
+    java.srcDir commonJavaLink
+    resources.srcDir commonResourcesLink
+}
+
+tasks.named('compileJava', JavaCompile) {
+    dependsOn(configurations.commonJava)
+}
+
+processResources {
+    dependsOn(configurations.commonResources)
+}
+
+tasks.named('sourcesJar', Jar) {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    dependsOn(configurations.commonJava)
+    from(configurations.commonJava)
+    dependsOn(configurations.commonResources)
+    from(configurations.commonResources)
+}
+
+static void ensureDirectoryLink(File link, File target) {
+    if (link.exists()) {
+        return
+    }
+    link.parentFile.mkdirs()
+    def linkPath = link.toPath()
+    def targetPath = target.toPath()
+    try {
+        java.nio.file.Files.createSymbolicLink(linkPath, targetPath)
+    } catch (Exception ignored) {
+        def process = new ProcessBuilder('cmd', '/c', 'mklink', '/J', link.absolutePath, target.absolutePath)
+                .inheritIO()
+                .start()
+        process.waitFor()
+    }
+}
