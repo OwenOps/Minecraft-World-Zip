@@ -1,11 +1,14 @@
 modLoader = "javafml"
 loaderVersion = "${neoforge_loader_version_range}"
 license = "${license}"
+issueTrackerURL = "${mod_issues}"
 
 [[mods]]
 modId = "${mod_id}"
 version = "${version}"
 displayName = "${mod_name}"
+displayURL = "${mod_homepage}"
+logoFile = "assets/${mod_id}/icon.png"
 authors = "${mod_author}"
 credits = "${credits}"
 description = '''${description}'''
@@ -20,11 +23,11 @@ modId = "neoforge"
 type = "required"
 versionRange = "[${neoforge_version},)"
 ordering = "NONE"
-side = "BOTH"
+side = "CLIENT"
 
 [[dependencies.${mod_id}]]
 modId = "minecraft"
 type = "required"
 versionRange = "${minecraft_version_range}"
 ordering = "NONE"
-side = "BOTH"
+side = "CLIENT"

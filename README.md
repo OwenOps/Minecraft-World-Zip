@@ -8,7 +8,7 @@ Zip Minecraft **26.2** worlds to save disk space. Play a zipped world from the S
 - Java 25
 - **Fabric** (with [Fabric API](https://modrinth.com/mod/fabric-api)) **or** **NeoForge**
 
-Use the JAR that matches your loader. Do not install both. Client and server both need the mod if you play on a dedicated server.
+Use the JAR that matches your loader. Do not install both. This is a **client** mod (Select World).
 
 ## How to use
 

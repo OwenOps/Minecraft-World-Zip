@@ -4,10 +4,17 @@
   "version": "${version}",
   "name": "${mod_name}",
   "description": "${description}",
-  "authors": [],
-  "contact": {},
+  "authors": [
+    "${mod_author}"
+  ],
+  "contact": {
+    "homepage": "${mod_homepage}",
+    "sources": "${mod_sources}",
+    "issues": "${mod_issues}"
+  },
   "license": "${license}",
-  "environment": "*",
+  "icon": "assets/${mod_id}/icon.png",
+  "environment": "client",
   "entrypoints": {
     "main": [
       "com.worldzip.WorldZipMod"
